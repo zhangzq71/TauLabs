@@ -57,6 +57,14 @@
 #include "pios_usb_rctx.h"
 #endif	/* PIOS_INCLUDE_USB_RCTX */
 
+#if defined(PIOS_INCLUDE_OPENLRS_RCVR)
+#include "pios_openlrs.h"
+#endif /* PIOS_INCLUDE_OPENLRS_RCVR */
+
+#if defined(PIOS_INCLUDE_FRSKY_RSSI)
+#include "pios_frsky_rssi.h"
+#endif /* PIOS_INCLUDE_FRSKY_RSSI */
+
 #define ARMED_THRESHOLD    0.50f
 //safe band to allow a bit of calibration error or trim offset (in microseconds)
 #define CONNECTION_OFFSET_THROTTLE 100
@@ -195,8 +203,6 @@ int32_t transmitter_control_update()
 		switch (settings.RssiType) {
 		case MANUALCONTROLSETTINGS_RSSITYPE_PWM:
 			value = PIOS_RCVR_Read(pios_rcvr_group_map[MANUALCONTROLSETTINGS_CHANNELGROUPS_PWM], settings.RssiChannelNumber);
-			if(settings.RssiPwmPeriod != 0)
-				value = (value) % (settings.RssiPwmPeriod);
 			break;
 		case MANUALCONTROLSETTINGS_RSSITYPE_PPM:
 			value = PIOS_RCVR_Read(pios_rcvr_group_map[MANUALCONTROLSETTINGS_CHANNELGROUPS_PPM], settings.RssiChannelNumber);
@@ -205,6 +211,16 @@ int32_t transmitter_control_update()
 #if defined(PIOS_INCLUDE_ADC)
 			value = PIOS_ADC_GetChannelRaw(settings.RssiChannelNumber);
 #endif
+			break;
+		case MANUALCONTROLSETTINGS_RSSITYPE_OPENLRS:
+#if defined(PIOS_INCLUDE_OPENLRS_RCVR)
+			value = PIOS_OpenLRS_RSSI_Get();
+#endif /* PIOS_INCLUDE_OPENLRS_RCVR */
+			break;
+		case MANUALCONTROLSETTINGS_RSSITYPE_FRSKYPWM:
+#if defined(PIOS_INCLUDE_FRSKY_RSSI)
+			value = PIOS_FrSkyRssi_Get();
+#endif /* PIOS_INCLUDE_FRSKY_RSSI */
 			break;
 		}
 		if(value < 0)
@@ -411,6 +427,9 @@ int32_t transmitter_control_select(bool reset_controller)
 	case FLIGHTSTATUS_FLIGHTMODE_ACRO:
 	case FLIGHTSTATUS_FLIGHTMODE_LEVELING:
 	case FLIGHTSTATUS_FLIGHTMODE_VIRTUALBAR:
+	case FLIGHTSTATUS_FLIGHTMODE_MWRATE:
+	case FLIGHTSTATUS_FLIGHTMODE_HORIZON:
+	case FLIGHTSTATUS_FLIGHTMODE_AXISLOCK:
 	case FLIGHTSTATUS_FLIGHTMODE_STABILIZED1:
 	case FLIGHTSTATUS_FLIGHTMODE_STABILIZED2:
 	case FLIGHTSTATUS_FLIGHTMODE_STABILIZED3:
@@ -504,8 +523,10 @@ static bool arming_position(ManualControlCommandData * cmd, ManualControlSetting
 			(cmd->Pitch > ARMED_THRESHOLD);
 			// Note that pulling pitch stick down corresponds to positive values
 	case MANUALCONTROLSETTINGS_ARMING_SWITCH:
+	case MANUALCONTROLSETTINGS_ARMING_SWITCHDELAY:
 		return cmd->ArmSwitch == MANUALCONTROLCOMMAND_ARMSWITCH_ARMED;
 	case MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLE:
+	case MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLEDELAY:
 		return lowThrottle && cmd->ArmSwitch == MANUALCONTROLCOMMAND_ARMSWITCH_ARMED;
 	default:
 		return false;
@@ -537,7 +558,9 @@ static bool disarming_position(ManualControlCommandData * cmd, ManualControlSett
 			(cmd->Yaw > ARMED_THRESHOLD || cmd->Yaw < -ARMED_THRESHOLD) &&
 			(cmd->Roll > ARMED_THRESHOLD || cmd->Roll < -ARMED_THRESHOLD) );
 	case MANUALCONTROLSETTINGS_ARMING_SWITCH:
+	case MANUALCONTROLSETTINGS_ARMING_SWITCHDELAY:
 	case MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLE:
+	case MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLEDELAY:
 		return cmd->ArmSwitch != MANUALCONTROLCOMMAND_ARMSWITCH_ARMED;
 	default:
 		return false;
@@ -592,7 +615,7 @@ static void process_transmitter_events(ManualControlCommandData * cmd, ManualCon
 		bool arm = arming_position(cmd, settings) && valid;
 
 		if (arm && (settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCH ||
-		       settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLE)) {
+				settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLE)) {
 			arm_state = ARM_STATE_ARMED;
 		} else if (arm) {
 			armedDisarmStart = lastSysTime;
@@ -636,7 +659,7 @@ static void process_transmitter_events(ManualControlCommandData * cmd, ManualCon
 		// Determine whether to disarm when throttle is low
 		uint8_t flight_mode;
 		FlightStatusFlightModeGet(&flight_mode);
-		bool autonomous_mode = flight_mode == FLIGHTSTATUS_FLIGHTMODE_VELOCITYCONTROL ||
+		bool autonomous_mode = 
 		                       flight_mode == FLIGHTSTATUS_FLIGHTMODE_POSITIONHOLD ||
 		                       flight_mode == FLIGHTSTATUS_FLIGHTMODE_RETURNTOHOME ||
 		                       flight_mode == FLIGHTSTATUS_FLIGHTMODE_PATHPLANNER  ||
@@ -655,7 +678,9 @@ static void process_transmitter_events(ManualControlCommandData * cmd, ManualCon
 
   		bool disarm = disarming_position(cmd, settings) && valid;
 		if (disarm && (settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCH ||
-		       settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLE)) {
+				settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCHDELAY ||
+				settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLE ||
+				settings->Arming == MANUALCONTROLSETTINGS_ARMING_SWITCHTHROTTLEDELAY)) {
 			arm_state = ARM_STATE_DISARMED;
 		} else if (disarm) {
 			armedDisarmStart = lastSysTime;
@@ -782,6 +807,9 @@ static bool updateRcvrActivityCompare(uintptr_t rcvr_id, struct rcvr_activity_fs
 			case MANUALCONTROLSETTINGS_CHANNELGROUPS_RFM22B:
 				group = RECEIVERACTIVITY_ACTIVEGROUP_RFM22B;
 				break;
+			case MANUALCONTROLSETTINGS_CHANNELGROUPS_OPENLRS:
+				group = RECEIVERACTIVITY_ACTIVEGROUP_OPENLRS;
+				break;
 			case MANUALCONTROLSETTINGS_CHANNELGROUPS_GCS:
 				group = RECEIVERACTIVITY_ACTIVEGROUP_GCS;
 				break;
@@ -890,6 +918,18 @@ static void update_stabilization_desired(ManualControlCommandData * cmd, ManualC
 	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_VIRTUALBAR,
 	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_VIRTUALBAR,
 	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_AXISLOCK};
+	const uint8_t MWRATE_SETTINGS[3] = {
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_MWRATE,
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_MWRATE,
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_MWRATE};
+	const uint8_t HORIZON_SETTINGS[3] = {
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_HORIZON,
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_HORIZON,
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_AXISLOCK};
+	const uint8_t AXISLOCK_SETTINGS[3] = {
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_AXISLOCK,
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_AXISLOCK,
+	                                    STABILIZATIONDESIRED_STABILIZATIONMODE_AXISLOCK};
 
 	const uint8_t * stab_settings;
 	FlightStatusData flightStatus;
@@ -903,6 +943,15 @@ static void update_stabilization_desired(ManualControlCommandData * cmd, ManualC
 			break;
 		case FLIGHTSTATUS_FLIGHTMODE_VIRTUALBAR:
 			stab_settings = VIRTUALBAR_SETTINGS;
+			break;
+		case FLIGHTSTATUS_FLIGHTMODE_MWRATE:
+			stab_settings = MWRATE_SETTINGS;
+			break;
+		case FLIGHTSTATUS_FLIGHTMODE_HORIZON:
+			stab_settings = HORIZON_SETTINGS;
+			break;
+		case FLIGHTSTATUS_FLIGHTMODE_AXISLOCK:
+			stab_settings = AXISLOCK_SETTINGS;
 			break;
 		case FLIGHTSTATUS_FLIGHTMODE_STABILIZED1:
 			stab_settings = settings->Stabilization1Settings;
