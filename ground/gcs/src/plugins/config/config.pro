@@ -2,6 +2,7 @@ TEMPLATE = lib
 TARGET = Config
 DEFINES += CONFIG_LIBRARY
 QT += svg
+QT += widgets
 include(config_dependencies.pri)
 INCLUDEPATH *= ../../libs/eigen
 
