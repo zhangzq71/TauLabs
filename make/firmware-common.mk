@@ -1,5 +1,106 @@
+ifneq ($(NO_AUTO_UAVO),YES)
+
+# Common UAVOs to all targets:
+
+UAVOBJSRCFILENAMES += accels
+UAVOBJSRCFILENAMES += firmwareiapobj
+UAVOBJSRCFILENAMES += flightstatus
+UAVOBJSRCFILENAMES += flighttelemetrystats
+UAVOBJSRCFILENAMES += gcsreceiver
+UAVOBJSRCFILENAMES += gcstelemetrystats
+UAVOBJSRCFILENAMES += modulesettings
+UAVOBJSRCFILENAMES += objectpersistence
+UAVOBJSRCFILENAMES += receiveractivity
+UAVOBJSRCFILENAMES += sessionmanaging
+UAVOBJSRCFILENAMES += systemalarms
+UAVOBJSRCFILENAMES += systemsettings
+UAVOBJSRCFILENAMES += systemstats
+UAVOBJSRCFILENAMES += taskinfo
+UAVOBJSRCFILENAMES += watchdogstatus
+
+ifneq ($(UAVO_MINIMAL),YES)
+# On all non-discovery board targets:
+
+UAVOBJSRCFILENAMES += accessorydesired
+UAVOBJSRCFILENAMES += actuatorcommand
+UAVOBJSRCFILENAMES += actuatordesired
+UAVOBJSRCFILENAMES += actuatorsettings
+UAVOBJSRCFILENAMES += airspeedactual
+UAVOBJSRCFILENAMES += attitudeactual
+UAVOBJSRCFILENAMES += attitudesettings
+UAVOBJSRCFILENAMES += baroaltitude
+UAVOBJSRCFILENAMES += cameradesired
+UAVOBJSRCFILENAMES += camerastabsettings
+UAVOBJSRCFILENAMES += fixedwingairspeeds
+UAVOBJSRCFILENAMES += fixedwingpathfollowerstatus
+UAVOBJSRCFILENAMES += flightbatterysettings
+UAVOBJSRCFILENAMES += flightbatterystate
+UAVOBJSRCFILENAMES += gpsposition
+UAVOBJSRCFILENAMES += gpsvelocity
+UAVOBJSRCFILENAMES += gyros
+UAVOBJSRCFILENAMES += homelocation
+UAVOBJSRCFILENAMES += manualcontrolcommand
+UAVOBJSRCFILENAMES += manualcontrolsettings
+UAVOBJSRCFILENAMES += mixersettings
+UAVOBJSRCFILENAMES += mixerstatus
+UAVOBJSRCFILENAMES += mwratesettings
+UAVOBJSRCFILENAMES += pathdesired
+UAVOBJSRCFILENAMES += pathstatus
+UAVOBJSRCFILENAMES += poilocation
+UAVOBJSRCFILENAMES += positionactual
+UAVOBJSRCFILENAMES += ratedesired
+UAVOBJSRCFILENAMES += sensorsettings
+UAVOBJSRCFILENAMES += stabilizationdesired
+UAVOBJSRCFILENAMES += stabilizationsettings
+UAVOBJSRCFILENAMES += systemident
+UAVOBJSRCFILENAMES += tabletinfo
+UAVOBJSRCFILENAMES += trimangles
+UAVOBJSRCFILENAMES += trimanglessettings
+UAVOBJSRCFILENAMES += txpidsettings
+UAVOBJSRCFILENAMES += ubloxinfo
+UAVOBJSRCFILENAMES += velocityactual
+
+ifeq ($(UAVO_NAV),YES)
+UAVOBJSRCFILENAMES += airspeedsettings
+UAVOBJSRCFILENAMES += altitudeholddesired
+UAVOBJSRCFILENAMES += altitudeholdsettings
+UAVOBJSRCFILENAMES += baroairspeed
+UAVOBJSRCFILENAMES += fixedwingpathfollowersettings
+UAVOBJSRCFILENAMES += flightplancontrol
+UAVOBJSRCFILENAMES += flightplansettings
+UAVOBJSRCFILENAMES += flightplanstatus
+UAVOBJSRCFILENAMES += gpssatellites
+UAVOBJSRCFILENAMES += gpstime
+UAVOBJSRCFILENAMES += gyrosbias
+UAVOBJSRCFILENAMES += inssettings
+UAVOBJSRCFILENAMES += insstate
+UAVOBJSRCFILENAMES += loitercommand
+UAVOBJSRCFILENAMES += magbias
+UAVOBJSRCFILENAMES += magnetometer
+UAVOBJSRCFILENAMES += nedaccel
+UAVOBJSRCFILENAMES += nedposition
+UAVOBJSRCFILENAMES += pathplannersettings
+UAVOBJSRCFILENAMES += sonaraltitude
+UAVOBJSRCFILENAMES += stateestimation
+UAVOBJSRCFILENAMES += velocitydesired
+UAVOBJSRCFILENAMES += vibrationanalysisoutput
+UAVOBJSRCFILENAMES += vibrationanalysissettings
+UAVOBJSRCFILENAMES += vtolpathfollowersettings
+UAVOBJSRCFILENAMES += vtolpathfollowerstatus
+UAVOBJSRCFILENAMES += waypoint
+UAVOBJSRCFILENAMES += waypointactive
+endif # UAVO_NAV
+
+endif # !UAVO_MINIMAL
+
+endif # !NO_AUTO_UAVO
+
 # Define programs and commands.
 REMOVE  = rm -f
+
+SRC += $(foreach UAVOBJSRCFILE,$(UAVOBJSRCFILENAMES),$(OPUAVSYNTHDIR)/$(UAVOBJSRCFILE).c )
+
+CFLAGS += $(foreach UAVOBJSRCFILE,$(UAVOBJSRCFILENAMES),-DUAVOBJ_INIT_$(UAVOBJSRCFILE) )
 
 # List of all source files.
 ALLSRC     =  $(ASRC) $(SRC) $(CPPSRC)
@@ -15,7 +116,11 @@ DEPFILES   = $(addprefix $(OUTDIR)/dep/, $(addsuffix .o.d, $(ALLSRCBASE)))
 # Default target.
 all: gccversion build
 
-build: elf hex bin lss sym
+build: elf
+
+ifneq ($(BUILD_FWFILES), NO)
+build: hex bin lss sym
+endif
 
 # Link: create ELF output file from object files.
 $(eval $(call LINK_TEMPLATE, $(OUTDIR)/$(TARGET).elf, $(ALLOBJ)))
@@ -34,7 +139,15 @@ $(eval $(call PARTIAL_COMPILE_TEMPLATE, SRC))
 
 $(OUTDIR)/$(TARGET).bin.o: $(OUTDIR)/$(TARGET).bin
 
-$(eval $(call TLFW_TEMPLATE,$(OUTDIR)/$(TARGET).bin,$(BOARD_TYPE),$(BOARD_REVISION)))
+# Allows the bin to be padded up to the firmware description blob base
+# Required for boards which don't use the TL bootloader to put
+# the blob at the correct location
+ifdef PAD_TLFW_FW_DESC
+FW_DESC_BASE := $(shell echo $$(($(FW_BANK_BASE)+$(FW_BANK_SIZE)-$(FW_DESC_SIZE))))
+else 
+FW_DESC_BASE = 0
+endif
+$(eval $(call TLFW_TEMPLATE,$(OUTDIR)/$(TARGET).bin,$(BOARD_TYPE),$(BOARD_REVISION),$(FW_DESC_BASE)))
 
 # Add jtag targets (program and wipe)
 $(eval $(call JTAG_TEMPLATE,$(OUTDIR)/$(TARGET).bin,$(FW_BANK_BASE),$(FW_BANK_SIZE),$(OPENOCD_JTAG_CONFIG),$(OPENOCD_CONFIG)))
@@ -74,6 +187,7 @@ clean_list :
 	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).elf
 	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).hex
 	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).bin
+	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).padded.bin
 	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).sym
 	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).lss
 	$(V1) $(REMOVE) $(OUTDIR)/$(TARGET).bin.o
