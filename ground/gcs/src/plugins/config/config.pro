@@ -4,11 +4,7 @@ DEFINES += CONFIG_LIBRARY
 DEFINES += QWT_DLL
 
 QT += svg
-<<<<<<< HEAD
-QT += widgets
-=======
 
->>>>>>> taulabs/next
 include(config_dependencies.pri)
 LIBS *= -l$$qtLibraryName(Qwt)
 
