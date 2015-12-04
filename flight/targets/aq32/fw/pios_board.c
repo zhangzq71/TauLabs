@@ -42,7 +42,6 @@
 #include <openpilot.h>
 #include <uavobjectsinit.h>
 #include "hwaq32.h"
-#include "loggingsettings.h"
 #include "manualcontrolsettings.h"
 #include "modulesettings.h"
 
@@ -162,7 +161,7 @@ static const struct pios_ms5611_cfg pios_ms5611_cfg = {
 
 bool external_mag_fail;
 
-uintptr_t pios_com_logging_id;
+uintptr_t pios_com_openlog_logging_id;
 uintptr_t pios_uavo_settings_fs_id;
 uintptr_t pios_waypoints_settings_fs_id;
 uintptr_t pios_internal_adc_id;
@@ -254,8 +253,7 @@ void PIOS_Board_Init(void) {
 
     HwAQ32Initialize();
     ModuleSettingsInitialize();
-    LoggingSettingsInitialize();
-
+	
 #if defined(PIOS_INCLUDE_RTC)
     /* Initialize the real-time clock and its associated tick */
     PIOS_RTC_Init(&pios_rtc_main_cfg);
@@ -388,15 +386,13 @@ void PIOS_Board_Init(void) {
     HwAQ32DSMxModeOptions hw_DSMxMode;
     HwAQ32DSMxModeGet(&hw_DSMxMode);
 
-    LoggingSettingsLogDestinationOptions log_destination;
-    LoggingSettingsLogDestinationGet(&log_destination);
-    
     /* UART1 Port */
     uint8_t hw_uart1;
     HwAQ32Uart1Get(&hw_uart1);
 
     PIOS_HAL_ConfigurePort(hw_uart1,             // port type protocol
             &pios_usart1_cfg,                    // usart_port_cfg
+            &pios_usart1_cfg,                    // frsky usart_port_cfg
             &pios_usart_com_driver,              // com_driver
             NULL,                                // i2c_id
             NULL,                                // i2c_cfg
@@ -408,8 +404,7 @@ void PIOS_Board_Init(void) {
             0,                                   // dsm_mode
             NULL,                                // sbus_rcvr_cfg
             NULL,                                // sbus_cfg    
-            false,                               // sbus_toggle
-            log_destination);                     // log_dest
+            false);                              // sbus_toggle
 
     /* UART2 Port */
     uint8_t hw_uart2;
@@ -417,6 +412,7 @@ void PIOS_Board_Init(void) {
 
     PIOS_HAL_ConfigurePort(hw_uart2,             // port type protocol
             &pios_usart2_cfg,                    // usart_port_cfg
+            &pios_usart2_cfg,                    // frsky usart_port_cfg
             &pios_usart_com_driver,              // com_driver
             NULL,                                // i2c_id
             NULL,                                // i2c_cfg
@@ -428,8 +424,7 @@ void PIOS_Board_Init(void) {
             0,                                   // dsm_mode
             NULL,                                // sbus_rcvr_cfg
             NULL,                                // sbus_cfg    
-            false,                               // sbus_toggle
-            log_destination);                     // log_dest
+            false);                              // sbus_toggle
 
     /* UART3 Port */
     uint8_t hw_uart3;
@@ -437,6 +432,7 @@ void PIOS_Board_Init(void) {
 
     PIOS_HAL_ConfigurePort(hw_uart3,             // port type protocol
             &pios_usart3_cfg,                    // usart_port_cfg
+            &pios_usart3_cfg,                    // frsky usart_port_cfg
             &pios_usart_com_driver,              // com_driver
             NULL,                                // i2c_id 
             NULL,                                // i2c_cfg
@@ -448,8 +444,7 @@ void PIOS_Board_Init(void) {
             0,                                   // dsm_mode
             &pios_usart3_sbus_cfg,               // sbus_rcvr_cfg
             &pios_usart3_sbus_aux_cfg,           // sbus_cfg                
-            true,                                // sbus_toggle
-            log_destination);                     // log_dest
+            true);                               // sbus_toggle
             
     if (hw_uart3 == HWAQ32_UART3_FRSKYSENSORHUB)
     {
@@ -463,6 +458,7 @@ void PIOS_Board_Init(void) {
 
     PIOS_HAL_ConfigurePort(hw_uart4,             // port type protocol
             &pios_usart4_cfg,                    // usart_port_cfg
+            &pios_usart4_cfg,                    // frsky usart_port_cfg
             &pios_usart_com_driver,              // com_driver
             NULL,                                // i2c_id
             NULL,                                // i2c_cfg
@@ -474,8 +470,7 @@ void PIOS_Board_Init(void) {
             hw_DSMxMode,                         // dsm_mode
             NULL,                                // sbus_rcvr_cfg
             NULL,                                // sbus_cfg    
-            false,                               // sbus_toggle
-            log_destination);                     // log_dest
+            false);                              // sbus_toggle
 
     /* UART6 Port */
     uint8_t hw_uart6;
@@ -483,6 +478,7 @@ void PIOS_Board_Init(void) {
 
     PIOS_HAL_ConfigurePort(hw_uart6,             // port type protocol
             &pios_usart6_cfg,                    // usart_port_cfg
+            &pios_usart6_cfg,                    // frsky usart_port_cfg
             &pios_usart_com_driver,              // com_driver
             NULL,                                // i2c_id
             NULL,                                // i2c_cfg
@@ -494,12 +490,12 @@ void PIOS_Board_Init(void) {
             hw_DSMxMode,                         // dsm_mode
             NULL,                                // sbus_rcvr_cfg
             NULL,                                // sbus_cfg    
-            false,                               // sbus_toggle
-            log_destination);                     // log_dest
+            false);                              // sbus_toggle
 
     /* Configure the rcvr port */
     PIOS_HAL_ConfigurePort(hw_rcvrport,          // port type protocol
             NULL,                                // usart_port_cfg
+            NULL,                                // frsky usart_port_cfg
             NULL,                                // com_driver
             NULL,                                // i2c_id
             NULL,                                // i2c_cfg
@@ -511,8 +507,7 @@ void PIOS_Board_Init(void) {
             0,                                   // dsm_mode
             NULL,                                // sbus_rcvr_cfg
             NULL,                                // sbus_cfg    
-            false,                               // sbus_toggle
-            log_destination);                     // log_dest
+            false);                              // sbus_toggle
 
 #if defined(PIOS_INCLUDE_GCSRCVR)
     GCSReceiverInitialize();

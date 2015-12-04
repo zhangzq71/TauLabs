@@ -5,7 +5,7 @@ WHEREAMI := $(dir $(lastword $(MAKEFILE_LIST)))
 ROOT_DIR := $(realpath $(WHEREAMI)/ )
 
 # import macros common to all supported build systems
-include $(CURDIR)/make/system-id.mk
+include $(ROOT_DIR)/make/system-id.mk
 
 # configure some directories that are relative to wherever ROOT_DIR is located
 TOOLS_DIR := $(ROOT_DIR)/tools
@@ -257,6 +257,10 @@ $(BUILD_DIR):
 #
 ##############################
 
+USE_MSVC ?= NO
+ifeq ($(USE_MSVC), YES)
+QT_SPEC=win32-msvc2013
+endif
 .PHONY: all_ground
 all_ground: gcs
 
@@ -271,12 +275,19 @@ endif
 
 .PHONY: gcs
 gcs:  uavobjects
+ifeq ($(USE_MSVC), NO)
 	$(V1) mkdir -p $(BUILD_DIR)/ground/$@
 	$(V1) ( cd $(BUILD_DIR)/ground/$@ && \
 	  PYTHON=$(PYTHON) $(QMAKE) $(ROOT_DIR)/ground/gcs/gcs.pro -spec $(QT_SPEC) -r CONFIG+="$(GCS_BUILD_CONF) $(GCS_SILENT)" $(GCS_QMAKE_OPTS) && \
-	  $(MAKE) -w ; \
+	  $(MAKE) --no-print-directory -w ; \
 	)
-
+else
+	$(V1) mkdir -p $(BUILD_DIR)/ground/$@
+	$(V1) ( cd $(BUILD_DIR)/ground/$@ && \
+	  PYTHON=$(PYTHON) $(QMAKE) $(ROOT_DIR)/ground/gcs/gcs.pro -spec $(QT_SPEC) -r CONFIG+="$(GCS_BUILD_CONF) $(GCS_SILENT)" $(GCS_QMAKE_OPTS) && \
+	  MAKEFLAGS= jom $(JOM_OPTIONS); \
+	)
+endif
 # Workaround for qmake bug that prevents copying the application icon
 ifneq (,$(filter $(UNAME), Darwin))
 	$(V1) ( cd $(BUILD_DIR)/ground/gcs/src/app && \
@@ -301,10 +312,17 @@ endif
 .PHONY: uavobjgenerator
 uavobjgenerator:
 	$(V1) mkdir -p $(BUILD_DIR)/ground/$@
+ifeq ($(USE_MSVC), NO)
 	$(V1) ( cd $(BUILD_DIR)/ground/$@ && \
 	  PYTHON=$(PYTHON) $(QMAKE) $(ROOT_DIR)/ground/uavobjgenerator/uavobjgenerator.pro -spec $(QT_SPEC) -r CONFIG+="debug $(UAVOGEN_SILENT)" && \
-	  $(MAKE) --no-print-directory -w ; \
+	  $(MAKE) --no-print-directory -w; \
 	)
+else
+	$(V1) ( cd $(BUILD_DIR)/ground/$@ && \
+	  PYTHON=$(PYTHON) $(QMAKE) $(ROOT_DIR)/ground/uavobjgenerator/uavobjgenerator.pro -spec $(QT_SPEC) -r CONFIG+="debug $(UAVOGEN_SILENT)" && \
+	  MAKEFLAGS= jom $(JOM_OPTIONS); \
+	)
+endif
 
 UAVOBJ_XML_DIR := $(ROOT_DIR)/shared/uavobjectdefinition
 UAVOBJ_OUT_DIR := $(BUILD_DIR)/uavobject-synthetics
@@ -318,7 +336,7 @@ uavobjects: uavobjgenerator
 uavobjects_test: uavobjgenerator
 	$(V1) $(UAVOBJGENERATOR) -v -none $(UAVOBJ_XML_DIR) $(ROOT_DIR)
 
-uavobjects_clean:
+uavobjects_clean: uavobjects_armsoftfp_clean uavobjects_armhardfp_clean
 	$(V0) @echo " CLEAN      $@"
 	$(V1) [ ! -d "$(UAVOBJ_OUT_DIR)" ] || $(RM) -r "$(UAVOBJ_OUT_DIR)"
 
@@ -816,11 +834,14 @@ ifneq ($(word 2,$(MAKECMDGOALS)),)
 export ENABLE_MSG_EXTRA := yes
 endif
 
+UAVOLIB_SOFT_OUT_DIR = $(BUILD_DIR)/uavobjects_armsoftfp
+UAVOLIB_HARD_OUT_DIR = $(BUILD_DIR)/uavobjects_armhardfp
+
 uavobjects_armsoftfp: TARGET=uavobjects_armsoftfp
-uavobjects_armsoftfp: OUTDIR=$(BUILD_DIR)/$(TARGET)
+uavobjects_armsoftfp: OUTDIR=$(UAVOLIB_SOFT_OUT_DIR)
 
 uavobjects_armhardfp: TARGET=uavobjects_armhardfp
-uavobjects_armhardfp: OUTDIR=$(BUILD_DIR)/$(TARGET)
+uavobjects_armhardfp: OUTDIR=$(UAVOLIB_HARD_OUT_DIR)
 
 uavobjects_%: uavobjects
 	$(V1) mkdir -p $(OUTDIR)/dep
@@ -842,6 +863,15 @@ uavobjects_%: uavobjects
 		OPUAVSYNTHDIR=$(OPUAVSYNTHDIR) \
 		\
 		$@
+
+.PHONY: uavobjects_armsoftfp_clean uavobjects_armhardfp_clean
+uavobjects_armsoftfp_clean:
+	$(V0) @echo " CLEAN      $@"
+	$(V1) [ ! -d "$(UAVOLIB_SOFT_OUT_DIR)" ] || $(RM) -r "$(UAVOLIB_SOFT_OUT_DIR)"
+
+uavobjects_armhardfp_clean:
+	$(V0) @echo " CLEAN      $@"
+	$(V1) [ ! -d "$(UAVOLIB_HARD_OUT_DIR)" ] || $(RM) -r "$(UAVOLIB_HARD_OUT_DIR)"
 
 # $(1) = Canonical board name all in lower case (e.g. coptercontrol)
 define BOARD_PHONY_TEMPLATE
@@ -883,7 +913,7 @@ EF_TARGETS := $(addprefix ef_, $(EF_BOARDS))
 
 .PHONY: all_fw all_fw_clean
 all_fw:        $(addsuffix _tlfw,  $(FW_TARGETS))
-all_fw_clean:  $(addsuffix _clean, $(FW_TARGETS))
+all_fw_clean:  $(addsuffix _clean, $(FW_TARGETS)) uavobjects_armsoftfp_clean uavobjects_armhardfp_clean
 
 .PHONY: all_bl all_bl_clean
 all_bl:        $(addsuffix _bin,   $(BL_TARGETS))

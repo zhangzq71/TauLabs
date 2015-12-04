@@ -400,17 +400,25 @@ void PIOS_Board_Init(void) {
 		{
 			uint8_t hw_rcvrserial;
 			HwNazeRcvrSerialGet(&hw_rcvrserial);
+			
 			HwNazeDSMxModeOptions hw_DSMxMode;
 			HwNazeDSMxModeGet(&hw_DSMxMode);
-			PIOS_HAL_ConfigurePort(hw_rcvrserial, 
-					&pios_usart_rcvrserial_cfg,
-					&pios_usart_com_driver,
-					NULL, NULL, NULL, NULL,
-					PIOS_LED_ALARM,
-					&pios_usart_dsm_hsum_rcvrserial_cfg,
-					&pios_dsm_rcvrserial_cfg,
-					hw_DSMxMode,
-					NULL, NULL, false, 0);
+			
+			PIOS_HAL_ConfigurePort(hw_rcvrserial,        // port type protocol
+					&pios_usart_rcvrserial_cfg,          // usart_port_cfg
+					&pios_usart_rcvrserial_cfg,          // frsky usart_port_cfg
+					&pios_usart_com_driver,              // com_driver
+					NULL,                                // i2c_id
+					NULL,                                // i2c_cfg
+					NULL,                                // ppm_cfg
+					NULL,                                // pwm_cfg
+					PIOS_LED_ALARM,                      // led_id
+					&pios_usart_dsm_hsum_rcvrserial_cfg, // usart_dsm_hsum_cfg
+					&pios_dsm_rcvrserial_cfg,            // dsm_cfg
+					hw_DSMxMode,                         // dsm_mode
+					NULL,                                // sbus_rcvr_cfg
+					NULL,                                // sbus_cfg
+					false);                              // sbus_toggle
 		}
 
 		// Fall through to set up PPM.
@@ -494,7 +502,20 @@ void PIOS_Board_Init(void) {
 #endif
 
 #if defined(PIOS_INCLUDE_ADC)
-#error "Not yet implemented"
+	{
+		uint16_t number_of_adc_pins = 2; // first two pins are always available
+		switch(hw_rcvrport) {
+		case HWNAZE_RCVRPORT_PPM:
+		case HWNAZE_RCVRPORT_PPMSERIAL:
+			number_of_adc_pins += 2; // rcvr port pins also available
+			break;
+		default:
+			break;
+		}
+		uint32_t internal_adc_id;
+		PIOS_INTERNAL_ADC_LIGHT_Init(&internal_adc_id, &internal_adc_cfg, number_of_adc_pins);
+		PIOS_ADC_Init(&pios_internal_adc_id, &pios_internal_adc_driver, internal_adc_id);
+	}
 #endif /* PIOS_INCLUDE_ADC */
 	PIOS_WDG_Clear();
 	PIOS_DELAY_WaitmS(200);
